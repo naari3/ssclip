@@ -25,7 +25,7 @@ enum TrayEvents {
     DoubleClickTrayIcon,
     Exit,
     OpenSettings,
-    CheckItem1,
+    ToggleAutorun,
 }
 
 fn main() {
@@ -57,7 +57,11 @@ fn main() {
             MenuBuilder::new()
                 .item("O&pen Settings", TrayEvents::OpenSettings)
                 .separator()
-                .checkable("This is checkable", is_exists, TrayEvents::CheckItem1)
+                .checkable(
+                    "Start SSClip on system startup",
+                    is_exists,
+                    TrayEvents::ToggleAutorun,
+                )
                 .separator()
                 .item("E&xit", TrayEvents::Exit),
         )
@@ -79,13 +83,13 @@ fn main() {
                 // TODO: Open Settings GUI
                 open::that(Config::get_config_path()).unwrap();
             }
-            TrayEvents::CheckItem1 => {
+            TrayEvents::ToggleAutorun => {
                 let state = tray_icon
-                    .get_menu_item_checkable(TrayEvents::CheckItem1)
+                    .get_menu_item_checkable(TrayEvents::ToggleAutorun)
                     .unwrap();
                 let new_state = !state;
                 tray_icon
-                    .set_menu_item_checkable(TrayEvents::CheckItem1, new_state)
+                    .set_menu_item_checkable(TrayEvents::ToggleAutorun, new_state)
                     .unwrap();
                 if new_state {
                     let current_exe = std::env::current_exe()
