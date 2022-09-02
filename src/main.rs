@@ -9,9 +9,11 @@ use arboard::{Clipboard, ImageData};
 use crossbeam_channel::unbounded;
 use trayicon::*;
 use watcher::DirectoryWatcher;
+use windows::core::{HSTRING, PCWSTR};
+use windows::Win32::UI::WindowsAndMessaging::MessageBoxW;
 use windows::Win32::{
     Foundation::HWND,
-    UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage, MSG},
+    UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage, MB_OK, MSG},
 };
 use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
@@ -109,10 +111,24 @@ fn main() {
 
     std::thread::spawn(move || {
         let config = config::Config::load().unwrap();
-        let mut watcher = DirectoryWatcher::new(config);
-        loop {
-            watcher.run(tx.clone());
-            watcher.reset();
+        let watcher = DirectoryWatcher::new(config);
+        match watcher {
+            Ok(mut watcher) => loop {
+                watcher.run(tx.clone());
+                match watcher.reset() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        message_box(format!("Error: {e}").as_str());
+                        std::process::exit(1);
+                    }
+                }
+            },
+            Err(e) => {
+                println!("Error: {}", e);
+                message_box(format!("Error: {e}").as_str());
+                std::process::exit(1);
+            }
         }
     });
 
@@ -146,5 +162,15 @@ fn main() {
             TranslateMessage(&message);
             DispatchMessageA(&message);
         }
+    }
+}
+
+fn to_pcwstr(s: &str) -> PCWSTR {
+    PCWSTR::from(&HSTRING::from(s))
+}
+
+fn message_box(text: &str) {
+    unsafe {
+        MessageBoxW(None, to_pcwstr(text), to_pcwstr(APP_NAME), MB_OK);
     }
 }

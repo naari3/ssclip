@@ -19,29 +19,8 @@ pub struct DirectoryWatcher {
 }
 
 impl DirectoryWatcher {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config) -> Result<Self, notify::Error> {
         let (tx, rx) = unbounded();
-        let mut watchers = Vec::new();
-
-        for path in config.paths.iter() {
-            let tx = tx.clone();
-            let mut watcher: notify::RecommendedWatcher = Watcher::new(
-                move |event: Result<notify::Event, notify::Error>| match event {
-                    Ok(event) => {
-                        tx.send(Event::Watch(event)).unwrap();
-                    }
-                    Err(e) => {
-                        println!("{:?}", e);
-                    }
-                },
-                notify::Config::default(),
-            )
-            .unwrap();
-            watcher
-                .watch(path.as_ref(), notify::RecursiveMode::Recursive)
-                .unwrap();
-            watchers.push(watcher);
-        }
 
         let tx2 = tx.clone();
         let config_watcher = config.get_watcher(
@@ -66,19 +45,27 @@ impl DirectoryWatcher {
             },
         );
 
-        Self {
-            config,
+        let mut me = Self {
+            config: config.clone(),
             _config_watcher: config_watcher,
-            _watchers: watchers,
+            _watchers: Vec::new(),
             tx,
             rx,
-        }
+        };
+        me.watcher_from_config(config)?;
+
+        Ok(me)
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> Result<(), notify::Error> {
         self.config.reload().unwrap();
+        self.watcher_from_config(self.config.clone())?;
+        Ok(())
+    }
+
+    fn watcher_from_config(&mut self, config: Config) -> Result<(), notify::Error> {
         self._watchers.clear();
-        for path in self.config.paths.iter() {
+        for path in config.paths.iter() {
             let tx = self.tx.clone();
             let mut watcher: notify::RecommendedWatcher = Watcher::new(
                 move |event: Result<notify::Event, notify::Error>| match event {
@@ -90,13 +77,15 @@ impl DirectoryWatcher {
                     }
                 },
                 notify::Config::default(),
-            )
-            .unwrap();
-            watcher
-                .watch(path.as_ref(), notify::RecursiveMode::Recursive)
-                .unwrap();
+            )?;
+            let result = watcher.watch(path.as_ref(), notify::RecursiveMode::Recursive);
+            if let Err(e) = result {
+                let e = e.add_path(PathBuf::from(path));
+                return Err(e);
+            }
             self._watchers.push(watcher);
         }
+        Ok(())
     }
 
     pub fn run(&mut self, tx: Sender<PathBuf>) {
