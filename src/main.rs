@@ -97,7 +97,6 @@ fn main() {
                         .to_str()
                         .unwrap()
                         .replace("\\\\?\\", "");
-                    println!("{}", current_exe);
                     key.set_value(APP_NAME, &current_exe).unwrap();
                 } else {
                     key.delete_value(APP_NAME).unwrap();
