@@ -2,6 +2,8 @@
 
 Tool for Windows to copy screenshots to the clipboard
 
+![Config file image](screenshots/configfile.png)
+
 ## How to use
 
 1. Download binary from [GitHub Releases](https://github.com/naari3/ssclip/releases)
