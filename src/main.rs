@@ -58,7 +58,7 @@ fn main() {
                 .item("O&pen Settings", TrayEvents::OpenSettings)
                 .separator()
                 .checkable(
-                    "Start SSClip on system startup",
+                    "Start ssclip on system startup",
                     is_exists,
                     TrayEvents::ToggleAutorun,
                 )
