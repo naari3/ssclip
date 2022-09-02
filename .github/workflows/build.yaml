@@ -15,7 +15,7 @@ jobs:
           - x86_64-pc-windows-gnu
     steps:
       - uses: actions/checkout@v2
-      - uses: rust-build/rust-build.action@latest
+      - uses: naari3/rust-build.action@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUSTTARGET: ${{ matrix.target }}
