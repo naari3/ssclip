@@ -13,6 +13,8 @@ notify = "5.0"
 serde = { version = "1.0.133", features = ["derive"] }
 arboard = "2.1"
 image = "0.24"
+winreg = "0.10"
+open = "3.0"
 
 [dependencies.windows]
 version = "0.39.0"

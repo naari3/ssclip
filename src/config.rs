@@ -24,13 +24,15 @@ impl Config {
         Ok(())
     }
 
+    pub fn get_config_path() -> std::path::PathBuf {
+        confy::get_configuration_file_path(APP_NAME, APP_NAME).unwrap()
+    }
+
     pub fn get_watcher<H: EventHandler>(&self, handler: H) -> notify::RecommendedWatcher {
         let mut watcher = notify::recommended_watcher(handler).unwrap();
         watcher
             .watch(
-                confy::get_configuration_file_path(APP_NAME, APP_NAME)
-                    .unwrap()
-                    .as_ref(),
+                Self::get_config_path().as_ref(),
                 notify::RecursiveMode::Recursive,
             )
             .unwrap();
