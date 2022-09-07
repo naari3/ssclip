@@ -66,24 +66,28 @@ impl DirectoryWatcher {
     fn watcher_from_config(&mut self, config: Config) -> Result<(), notify::Error> {
         self._watchers.clear();
         for path in config.paths.iter() {
-            let tx = self.tx.clone();
-            let mut watcher: notify::RecommendedWatcher = Watcher::new(
-                move |event: Result<notify::Event, notify::Error>| match event {
-                    Ok(event) => {
-                        tx.send(Event::Watch(event)).unwrap();
+            for entry in glob::glob(path.as_str()).unwrap() {
+                if let Ok(path) = entry {
+                    let tx = self.tx.clone();
+                    let mut watcher: notify::RecommendedWatcher = Watcher::new(
+                        move |event: Result<notify::Event, notify::Error>| match event {
+                            Ok(event) => {
+                                tx.send(Event::Watch(event)).unwrap();
+                            }
+                            Err(e) => {
+                                println!("{:?}", e);
+                            }
+                        },
+                        notify::Config::default(),
+                    )?;
+                    let result = watcher.watch(&path, notify::RecursiveMode::Recursive);
+                    if let Err(e) = result {
+                        let e = e.add_path(PathBuf::from(path));
+                        return Err(e);
                     }
-                    Err(e) => {
-                        println!("{:?}", e);
-                    }
-                },
-                notify::Config::default(),
-            )?;
-            let result = watcher.watch(path.as_ref(), notify::RecursiveMode::Recursive);
-            if let Err(e) = result {
-                let e = e.add_path(PathBuf::from(path));
-                return Err(e);
+                    self._watchers.push(watcher);
+                }
             }
-            self._watchers.push(watcher);
         }
         Ok(())
     }
