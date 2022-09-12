@@ -4,6 +4,11 @@ Tool for Windows to copy screenshots to the clipboard
 
 ![Config file image](screenshots/configfile.png)
 
+## Feature
+
+- Monitoring specific directory paths to get screenshots creation event, and Copy to the clipboard
+- Supports glob (`?`, `*`, `**`, `[...]`, `[!...]`, etc...) patterns
+
 ## How to use
 
 1. Download binary from [GitHub Releases](https://github.com/naari3/ssclip/releases)
