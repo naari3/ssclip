@@ -46,7 +46,7 @@ fn main() {
     dbg!(is_exists);
 
     let (s, r) = std::sync::mpsc::channel::<TrayEvents>();
-    let icon = include_bytes!("./icon1.ico");
+    let icon = include_bytes!("../icon/icon.ico");
 
     // Needlessly complicated tray icon with all the whistles and bells
     let mut tray_icon = TrayIconBuilder::new()

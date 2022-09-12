@@ -2,6 +2,7 @@
 name = "ssclip"
 version = "0.3.0"
 edition = "2021"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -30,3 +31,6 @@ default-features = false
 
 [patch.crates-io]
 confy = { git = 'https://github.com/rust-cli/confy' }
+
+[build-dependencies]
+# svg_to_ico = "1.0.0"
