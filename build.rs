@@ -1,9 +1,6 @@
 use std::path::Path;
 
-#[cfg(windows)]
-extern crate windres;
-
-use windres::Build;
+use embed_resource;
 
 fn main() {
     println!("cargo:rerun-if-changed=icon/icon_plain.svg");
@@ -14,5 +11,5 @@ fn main() {
     svg_to_ico::svg_to_ico(input, 96.0, output, &[32, 64, 256])
         .expect("failed to convert svg to ico");
 
-    Build::new().compile("src/ssclip.rc").unwrap();
+    embed_resource::compile("ssclip.rc");
 }

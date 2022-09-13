@@ -31,9 +31,7 @@ default-features = false
 
 [build-dependencies]
 svg_to_ico = "1.1.0"
-
-[target.'cfg(windows)'.build-dependencies]
-windres = "0.2.2"
+embed-resource = "1.7"
 
 [patch.crates-io]
 confy = { git = 'https://github.com/rust-cli/confy' }
