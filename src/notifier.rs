@@ -50,43 +50,43 @@ impl Notifier {
         }
     }
 
+    pub fn remove_diff(&mut self, paths: &[PathBuf]) {
+        let keys = self.watcher_map.keys().cloned().collect::<Vec<_>>();
+        for k in keys {
+            if !paths.contains(&k) {
+                self.watcher_map.remove(&k);
+            }
+        }
+    }
+
+    pub fn push_watcher(&mut self, path: &PathBuf, kind: NotifyKind) {
+        if self.watcher_map.contains_key(path) {
+            return;
+        }
+
+        let mut watcher: notify::RecommendedWatcher = Watcher::new(
+            send_notify_handler(self.tx.clone(), kind),
+            notify::Config::default(),
+        )
+        .unwrap();
+
+        watcher
+            .watch(&path.clone(), notify::RecursiveMode::Recursive)
+            .unwrap();
+
+        self.watcher_map.insert(path.clone(), watcher);
+    }
+
     pub fn run(&mut self, reload_rx: Receiver<()>) -> Result<(), ConfyError> {
-        let notify_tx2_1 = self.tx.clone();
-        let notify_tx3 = self.tx.clone();
         loop {
             let config = Config::load()?;
             let paths: Vec<_> = config.path_iter().collect();
-            let keys = self.watcher_map.keys().cloned().collect::<Vec<_>>();
-            for k in keys {
-                if !paths.contains(&k) {
-                    self.watcher_map.remove(&k);
-                }
-            }
-            let notify_tx2_2 = notify_tx2_1.clone();
+            self.remove_diff(&paths);
+
             for path in paths {
-                let mut watcher: notify::RecommendedWatcher = Watcher::new(
-                    send_notify_handler(notify_tx2_2.clone(), NotifyKind::Copy),
-                    notify::Config::default(),
-                )
-                .unwrap();
-
-                watcher
-                    .watch(&path.clone(), notify::RecursiveMode::Recursive)
-                    .unwrap();
-
-                self.watcher_map.insert(path.clone(), watcher);
+                self.push_watcher(&path, NotifyKind::Copy);
             }
-
-            let config_path = Config::get_config_path();
-            let mut watcher: notify::RecommendedWatcher = Watcher::new(
-                send_notify_handler(notify_tx3.clone(), NotifyKind::Reload),
-                notify::Config::default(),
-            )
-            .unwrap();
-            watcher
-                .watch(&config_path.clone(), notify::RecursiveMode::Recursive)
-                .unwrap();
-            self.watcher_map.insert(config_path.clone(), watcher);
+            self.push_watcher(&Config::get_config_path(), NotifyKind::Reload);
 
             reload_rx.recv().unwrap();
             println!("reload");
