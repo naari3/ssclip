@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use confy::ConfyError;
+use crate::{error::Result, runner::Runner};
 use crossbeam_channel::{Receiver, Sender};
 use notify::{RecommendedWatcher, Watcher};
 
@@ -14,8 +14,9 @@ pub enum NotifyKind {
 
 #[derive(Debug)]
 pub struct Notifier {
-    pub watcher_map: HashMap<PathBuf, RecommendedWatcher>,
-    pub tx: Sender<(PathBuf, NotifyKind)>,
+    watcher_map: HashMap<PathBuf, RecommendedWatcher>,
+    tx: Sender<(PathBuf, NotifyKind)>,
+    reload_rx: Receiver<()>,
 }
 
 fn send_notify_handler(
@@ -43,10 +44,11 @@ fn send_notify_handler(
 }
 
 impl Notifier {
-    pub fn new(tx: Sender<(PathBuf, NotifyKind)>) -> Self {
+    pub fn new(tx: Sender<(PathBuf, NotifyKind)>, reload_rx: Receiver<()>) -> Self {
         Self {
             watcher_map: HashMap::new(),
             tx,
+            reload_rx,
         }
     }
 
@@ -59,36 +61,37 @@ impl Notifier {
         }
     }
 
-    pub fn push_watcher(&mut self, path: &PathBuf, kind: NotifyKind) {
+    pub fn push_watcher(&mut self, path: &PathBuf, kind: NotifyKind) -> Result<()> {
         if self.watcher_map.contains_key(path) {
-            return;
+            return Ok(());
         }
 
         let mut watcher: notify::RecommendedWatcher = Watcher::new(
             send_notify_handler(self.tx.clone(), kind),
             notify::Config::default(),
-        )
-        .unwrap();
+        )?;
 
-        watcher
-            .watch(&path.clone(), notify::RecursiveMode::Recursive)
-            .unwrap();
+        watcher.watch(&path.clone(), notify::RecursiveMode::Recursive)?;
 
         self.watcher_map.insert(path.clone(), watcher);
-    }
 
-    pub fn run(&mut self, reload_rx: Receiver<()>) -> Result<(), ConfyError> {
+        Ok(())
+    }
+}
+
+impl Runner for Notifier {
+    fn run_inner(&mut self) -> Result<()> {
         loop {
             let config = Config::load()?;
             let paths: Vec<_> = config.path_iter().collect();
             self.remove_diff(&paths);
 
             for path in paths {
-                self.push_watcher(&path, NotifyKind::Copy);
+                self.push_watcher(&path, NotifyKind::Copy)?;
             }
-            self.push_watcher(&Config::get_config_path(), NotifyKind::Reload);
+            self.push_watcher(&Config::get_config_path(), NotifyKind::Reload)?;
 
-            reload_rx.recv().unwrap();
+            self.reload_rx.recv()?;
             println!("reload");
         }
     }

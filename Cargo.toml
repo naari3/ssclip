@@ -16,6 +16,7 @@ image = "0.24"
 winreg = "0.10"
 open = "3.0"
 glob = "0.3.0"
+thiserror = "1.0.35"
 
 [dependencies.windows]
 version = "0.39.0"

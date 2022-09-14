@@ -1,23 +1,26 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
+mod copier;
+mod error;
 mod notifier;
+mod runner;
+mod transfer;
 
-use std::{borrow::Cow, path::Path};
+use std::path::Path;
 
-use arboard::{Clipboard, ImageData};
 use crossbeam_channel::unbounded;
 use trayicon::*;
-use windows::core::HSTRING;
-use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONSTOP};
 use windows::Win32::{
     Foundation::HWND,
-    UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage, MB_OK, MSG},
+    UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage, MSG},
 };
 use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
-use crate::config::Config;
-use crate::notifier::{Notifier, NotifyKind};
+use crate::copier::Copier;
+use crate::notifier::Notifier;
+use crate::runner::Runner;
+use crate::{config::Config, transfer::Transfer};
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -114,51 +117,9 @@ fn main() {
     let (notify_tx, notify_rx) = unbounded();
     let (watch_tx, watch_rx) = unbounded();
 
-    std::thread::spawn(|| {
-        let mut notifier = Notifier::new(notify_tx);
-        match notifier.run(reload_rx) {
-            Ok(_) => {}
-            Err(err) => {
-                let msg = format!("Failed to load config: {:?}", err);
-                message_box(&msg);
-                std::process::exit(1);
-            }
-        };
-    });
-
-    std::thread::spawn(move || loop {
-        let (path, kind) = notify_rx.clone().recv().unwrap();
-
-        match kind {
-            NotifyKind::Copy => {
-                watch_tx.send(path).unwrap();
-            }
-            NotifyKind::Reload => {
-                reload_tx.send(()).unwrap();
-            }
-        };
-    });
-
-    std::thread::spawn(move || loop {
-        let path = watch_rx.recv().unwrap();
-        match image::open(path) {
-            Ok(image) => {
-                let width = image.width() as usize;
-                let height = image.height() as usize;
-                let bytes = image.into_rgba8().into_vec();
-                let image_data = ImageData {
-                    width,
-                    height,
-                    bytes: Cow::from(&bytes[..]),
-                };
-                Clipboard::new().unwrap().set_image(image_data).unwrap();
-                println!("copied");
-            }
-            Err(e) => {
-                println!("{:?}", e);
-            }
-        }
-    });
+    std::thread::spawn(|| Notifier::new(notify_tx, reload_rx).run());
+    std::thread::spawn(|| Transfer::new(notify_rx, watch_tx, reload_tx).run());
+    std::thread::spawn(|| Copier::new(watch_rx).run());
 
     // Your applications message loop. Because all applications require an
     // application loop, you are best served using an `winit` crate.
@@ -169,16 +130,5 @@ fn main() {
             TranslateMessage(&message);
             DispatchMessageA(&message);
         }
-    }
-}
-
-fn message_box(text: &str) {
-    unsafe {
-        MessageBoxW(
-            None,
-            &HSTRING::from(text),
-            &HSTRING::from(APP_NAME),
-            MB_ICONSTOP | MB_OK,
-        );
     }
 }
