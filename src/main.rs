@@ -1,16 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
-mod watcher;
+mod notifier;
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::{borrow::Cow, path::Path};
 
 use arboard::{Clipboard, ImageData};
-use crossbeam_channel::{unbounded, Sender};
-use notify::{RecommendedWatcher, Watcher};
+use crossbeam_channel::unbounded;
 use trayicon::*;
 use windows::core::HSTRING;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONSTOP};
@@ -21,7 +17,7 @@ use windows::Win32::{
 use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
 use crate::config::Config;
-use crate::watcher::WatchKind;
+use crate::notifier::{Notifier, NotifyKind};
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -48,9 +44,6 @@ fn main() {
         Err(_) => false,
     };
     dbg!(is_exists);
-
-    let watcher_map: HashMap<PathBuf, RecommendedWatcher> = HashMap::new();
-    let watcher_map = Arc::new(Mutex::new(watcher_map));
 
     let (s, r) = std::sync::mpsc::channel::<TrayEvents>();
     let icon = include_bytes!("../icon/icon.ico");
@@ -121,90 +114,26 @@ fn main() {
     let (notify_tx, notify_rx) = unbounded();
     let (watch_tx, watch_rx) = unbounded();
 
-    fn send_notify_handler(
-        tx: Sender<(PathBuf, WatchKind)>,
-        kind: WatchKind,
-    ) -> impl FnMut(notify::Result<notify::Event>) + Send + 'static {
-        move |res| {
-            if let Ok(e) = res {
-                let e = match e.kind {
-                    notify::EventKind::Create(_) => e,
-                    notify::EventKind::Modify(_) => e,
-                    _ => return,
-                };
-                for path in e.paths {
-                    // check paths file sizes
-                    if let Ok(metadata) = std::fs::metadata(&path) {
-                        if metadata.len() > 0 {
-                            tx.send((path, kind.clone())).unwrap();
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    let notify_tx2_1 = notify_tx.clone();
-    let notify_tx3 = notify_tx.clone();
-    let watcher_map2 = watcher_map.clone();
-    std::thread::spawn(move || loop {
-        let config = match Config::load() {
-            Ok(config) => config,
+    std::thread::spawn(|| {
+        let mut notifier = Notifier::new(notify_tx);
+        match notifier.run(reload_rx) {
+            Ok(_) => {}
             Err(err) => {
                 let msg = format!("Failed to load config: {:?}", err);
                 message_box(&msg);
                 std::process::exit(1);
             }
         };
-        let paths: Vec<_> = config.path_iter().collect();
-        let keys = (*watcher_map2.lock().unwrap())
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
-        for k in keys {
-            if !paths.contains(&k) {
-                (*watcher_map2.lock().unwrap()).remove(&k);
-            }
-        }
-        let notify_tx2_2 = notify_tx2_1.clone();
-        for path in paths {
-            let mut watcher: notify::RecommendedWatcher = Watcher::new(
-                send_notify_handler(notify_tx2_2.clone(), WatchKind::Watch),
-                notify::Config::default(),
-            )
-            .unwrap();
-
-            watcher
-                .watch(&path.clone(), notify::RecursiveMode::Recursive)
-                .unwrap();
-
-            (*watcher_map2.lock().unwrap()).insert(path.clone(), watcher);
-        }
-
-        let config_path = Config::get_config_path();
-        let mut watcher: notify::RecommendedWatcher = Watcher::new(
-            send_notify_handler(notify_tx3.clone(), WatchKind::Reload),
-            notify::Config::default(),
-        )
-        .unwrap();
-        watcher
-            .watch(&config_path.clone(), notify::RecursiveMode::Recursive)
-            .unwrap();
-        (*(watcher_map2.lock().unwrap())).insert(config_path.clone(), watcher);
-
-        reload_rx.recv().unwrap();
-        println!("reload");
     });
 
     std::thread::spawn(move || loop {
         let (path, kind) = notify_rx.clone().recv().unwrap();
 
         match kind {
-            WatchKind::Watch => {
+            NotifyKind::Copy => {
                 watch_tx.send(path).unwrap();
             }
-            WatchKind::Reload => {
+            NotifyKind::Reload => {
                 reload_tx.send(()).unwrap();
             }
         };
