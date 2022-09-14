@@ -1,7 +1,13 @@
-use notify::{EventHandler, Watcher};
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct PathIter {
+    paths: Vec<PathBuf>,
+}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Config {
@@ -18,24 +24,31 @@ impl Config {
         confy::store(APP_NAME, APP_NAME, &self)
     }
 
-    pub fn reload(&mut self) -> Result<(), confy::ConfyError> {
-        println!("{:?}", Config::load()?);
-        *self = Self::load()?;
-        Ok(())
-    }
-
     pub fn get_config_path() -> std::path::PathBuf {
         confy::get_configuration_file_path(APP_NAME, APP_NAME).unwrap()
     }
 
-    pub fn get_watcher<H: EventHandler>(&self, handler: H) -> notify::RecommendedWatcher {
-        let mut watcher = notify::recommended_watcher(handler).unwrap();
-        watcher
-            .watch(
-                Self::get_config_path().as_ref(),
-                notify::RecursiveMode::Recursive,
-            )
-            .unwrap();
-        watcher
+    pub fn path_iter(&self) -> PathIter {
+        PathIter::from_strs(self.paths.clone())
+    }
+}
+
+impl PathIter {
+    pub fn from_strs(paths: Vec<String>) -> Self {
+        let mut paths = paths
+            .iter()
+            .map(|path| glob::glob(path.as_str()).unwrap().filter_map(Result::ok))
+            .flatten()
+            .collect::<Vec<PathBuf>>();
+        paths.sort();
+        Self { paths }
+    }
+}
+
+impl Iterator for PathIter {
+    type Item = PathBuf;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.paths.pop()
     }
 }

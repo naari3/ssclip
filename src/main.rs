@@ -3,14 +3,17 @@
 mod config;
 mod watcher;
 
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::{borrow::Cow, path::Path};
 
 use arboard::{Clipboard, ImageData};
-use crossbeam_channel::unbounded;
+use crossbeam_channel::{unbounded, Sender};
+use notify::{RecommendedWatcher, Watcher};
 use trayicon::*;
-use watcher::DirectoryWatcher;
-use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::UI::WindowsAndMessaging::MessageBoxW;
+use windows::core::HSTRING;
+use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONSTOP};
 use windows::Win32::{
     Foundation::HWND,
     UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage, MB_OK, MSG},
@@ -18,6 +21,7 @@ use windows::Win32::{
 use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
 use crate::config::Config;
+use crate::watcher::WatchKind;
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -45,6 +49,9 @@ fn main() {
     };
     dbg!(is_exists);
 
+    let watcher_map: HashMap<PathBuf, RecommendedWatcher> = HashMap::new();
+    let watcher_map = Arc::new(Mutex::new(watcher_map));
+
     let (s, r) = std::sync::mpsc::channel::<TrayEvents>();
     let icon = include_bytes!("../icon/icon.ico");
 
@@ -70,12 +77,16 @@ fn main() {
         .build()
         .unwrap();
 
+    let (reload_tx, reload_rx) = unbounded();
+
+    let reload_tx2 = reload_tx.clone();
     std::thread::spawn(move || {
         r.iter().for_each(|m| match m {
             TrayEvents::DoubleClickTrayIcon => {
                 println!("Double click");
             }
             TrayEvents::ClickTrayIcon => {
+                reload_tx2.send(()).unwrap();
                 println!("Single click");
             }
             TrayEvents::Exit => {
@@ -107,33 +118,100 @@ fn main() {
         })
     });
 
-    let (tx, rx) = unbounded();
+    let (notify_tx, notify_rx) = unbounded();
+    let (watch_tx, watch_rx) = unbounded();
 
-    std::thread::spawn(move || {
-        let config = config::Config::load().unwrap();
-        let watcher = DirectoryWatcher::new(config);
-        match watcher {
-            Ok(mut watcher) => loop {
-                watcher.run(tx.clone());
-                match watcher.reset() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("Error: {}", e);
-                        message_box(format!("Error: {e}").as_str());
-                        std::process::exit(1);
+    fn send_notify_handler(
+        tx: Sender<(PathBuf, WatchKind)>,
+        kind: WatchKind,
+    ) -> impl FnMut(notify::Result<notify::Event>) + Send + 'static {
+        move |res| {
+            if let Ok(e) = res {
+                let e = match e.kind {
+                    notify::EventKind::Create(_) => e,
+                    notify::EventKind::Modify(_) => e,
+                    _ => return,
+                };
+                for path in e.paths {
+                    // check paths file sizes
+                    if let Ok(metadata) = std::fs::metadata(&path) {
+                        if metadata.len() > 0 {
+                            tx.send((path, kind.clone())).unwrap();
+                            break;
+                        }
                     }
                 }
-            },
-            Err(e) => {
-                println!("Error: {}", e);
-                message_box(format!("Error: {e}").as_str());
-                std::process::exit(1);
             }
         }
+    }
+
+    let notify_tx2_1 = notify_tx.clone();
+    let notify_tx3 = notify_tx.clone();
+    let watcher_map2 = watcher_map.clone();
+    std::thread::spawn(move || loop {
+        let config = match Config::load() {
+            Ok(config) => config,
+            Err(err) => {
+                let msg = format!("Failed to load config: {:?}", err);
+                message_box(&msg);
+                std::process::exit(1);
+            }
+        };
+        let paths: Vec<_> = config.path_iter().collect();
+        let keys = (*watcher_map2.lock().unwrap())
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for k in keys {
+            if !paths.contains(&k) {
+                (*watcher_map2.lock().unwrap()).remove(&k);
+            }
+        }
+        let notify_tx2_2 = notify_tx2_1.clone();
+        for path in paths {
+            let mut watcher: notify::RecommendedWatcher = Watcher::new(
+                send_notify_handler(notify_tx2_2.clone(), WatchKind::Watch),
+                notify::Config::default(),
+            )
+            .unwrap();
+
+            watcher
+                .watch(&path.clone(), notify::RecursiveMode::Recursive)
+                .unwrap();
+
+            (*watcher_map2.lock().unwrap()).insert(path.clone(), watcher);
+        }
+
+        let config_path = Config::get_config_path();
+        let mut watcher: notify::RecommendedWatcher = Watcher::new(
+            send_notify_handler(notify_tx3.clone(), WatchKind::Reload),
+            notify::Config::default(),
+        )
+        .unwrap();
+        watcher
+            .watch(&config_path.clone(), notify::RecursiveMode::Recursive)
+            .unwrap();
+        (*(watcher_map2.lock().unwrap())).insert(config_path.clone(), watcher);
+
+        reload_rx.recv().unwrap();
+        println!("reload");
     });
 
     std::thread::spawn(move || loop {
-        let path = rx.recv().unwrap();
+        let (path, kind) = notify_rx.clone().recv().unwrap();
+
+        match kind {
+            WatchKind::Watch => {
+                watch_tx.send(path).unwrap();
+            }
+            WatchKind::Reload => {
+                reload_tx.send(()).unwrap();
+            }
+        };
+    });
+
+    std::thread::spawn(move || loop {
+        let path = watch_rx.recv().unwrap();
         match image::open(path) {
             Ok(image) => {
                 let width = image.width() as usize;
@@ -165,12 +243,13 @@ fn main() {
     }
 }
 
-fn to_pcwstr(s: &str) -> PCWSTR {
-    PCWSTR::from(&HSTRING::from(s))
-}
-
 fn message_box(text: &str) {
     unsafe {
-        MessageBoxW(None, to_pcwstr(text), to_pcwstr(APP_NAME), MB_OK);
+        MessageBoxW(
+            None,
+            &HSTRING::from(text),
+            &HSTRING::from(APP_NAME),
+            MB_ICONSTOP | MB_OK,
+        );
     }
 }
