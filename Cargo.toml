@@ -31,9 +31,8 @@ features = ["yaml_conf"]
 default-features = false
 
 [build-dependencies]
-svg_to_ico = "1.1.0"
+svg_to_ico = "1.2.0"
 embed-resource = "1.7"
 
 [patch.crates-io]
 confy = { git = 'https://github.com/rust-cli/confy' }
-svg_to_ico = { git = 'https://github.com/Ortham/svg_to_ico' }

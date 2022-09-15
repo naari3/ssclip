@@ -1288,8 +1288,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "svg_to_ico"
-version = "1.1.0"
-source = "git+https://github.com/Ortham/svg_to_ico#e172c3a73a8d02e7099770667007db35b657d80a"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1b80b3435bb8cd35adb56b5ef5e528909ffe4ae9f771d73bb299a21fd45821b"
 dependencies = [
  "clap",
  "ico",
