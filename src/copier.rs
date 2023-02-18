@@ -1,4 +1,4 @@
-use std::{borrow::Cow, path::PathBuf};
+use std::{borrow::Cow, path::PathBuf, thread::sleep, time::Duration};
 
 use arboard::{Clipboard, ImageData};
 use crossbeam_channel::Receiver;
@@ -30,7 +30,24 @@ impl Runner for Copier {
                         height,
                         bytes: Cow::from(&bytes[..]),
                     };
-                    Clipboard::new()?.set_image(image_data)?;
+                    let task = || Clipboard::new()?.set_image(image_data.clone());
+                    loop {
+                        let result = task();
+                        match result {
+                            Ok(_) => {
+                                break;
+                            }
+                            Err(e) => match e {
+                                arboard::Error::ClipboardOccupied => {
+                                    println!("Clipboard occupied, retrying...");
+                                    sleep(Duration::from_millis(100));
+                                    continue;
+                                }
+                                // others, just return error
+                                _ => return Err(e.into()),
+                            },
+                        }
+                    }
                     println!("copied");
                 }
                 Err(e) => {
