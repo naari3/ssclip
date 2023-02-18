@@ -1,7 +1,5 @@
 use std::path::Path;
 
-use embed_resource;
-
 fn main() {
     println!("cargo:rerun-if-changed=icon/icon_plain.svg");
     println!("cargo:rerun-if-changed=icon/icon.ico");

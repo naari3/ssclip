@@ -37,8 +37,7 @@ impl PathIter {
     pub fn from_strs(paths: Vec<String>) -> Self {
         let mut paths = paths
             .iter()
-            .map(|path| glob::glob(path.as_str()).unwrap().filter_map(Result::ok))
-            .flatten()
+            .flat_map(|path| glob::glob(path.as_str()).unwrap().filter_map(Result::ok))
             .collect::<Vec<PathBuf>>();
         paths.sort();
         Self { paths }

@@ -42,10 +42,7 @@ fn main() {
         .join("Run");
     let (key, disp) = hkcu.create_subkey(&path).unwrap();
     dbg!(&disp);
-    let is_exists = match key.get_value::<String, &str>(APP_NAME) {
-        Ok(_) => true,
-        Err(_) => false,
-    };
+    let is_exists = key.get_value::<String, &str>(APP_NAME).is_ok();
     dbg!(is_exists);
 
     let (s, r) = std::sync::mpsc::channel::<TrayEvents>();
